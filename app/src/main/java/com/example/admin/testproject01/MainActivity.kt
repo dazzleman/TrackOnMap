@@ -4,16 +4,20 @@ import android.graphics.Color
 import android.os.Bundle
 import android.support.v7.app.AppCompatActivity
 import com.example.admin.testproject01.model.ResponseData
+import com.example.admin.testproject01.utils.hideKeyboard
+import com.example.admin.testproject01.utils.showToast
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.Polyline
 import com.google.android.gms.maps.model.PolylineOptions
 import com.google.gson.GsonBuilder
 import io.reactivex.Observable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.schedulers.Schedulers
+import kotlinx.android.synthetic.main.activity_main.*
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
@@ -30,6 +34,8 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
     private var prevSpeedState: SpeedState = SpeedState.NONE
     private var currentSpeedState: SpeedState = SpeedState.STATE_FOUR
     private var colorString: String = ""
+    private val arrayPolyLineOption: ArrayList<PolylineOptions> = arrayListOf()
+    private val arrayPolyLine: ArrayList<Polyline> = arrayListOf()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,16 +44,36 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
         val mapFragment = supportFragmentManager
                 .findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
+
+        initBtnSearch()
+    }
+
+    private fun initBtnSearch() {
+        btn_search_by_track_id.setOnClickListener({
+            prevSpeedState = SpeedState.NONE
+            if (arrayPolyLine.isNotEmpty()) arrayPolyLine.forEach { it.remove() }
+            if (arrayPolyLineOption.isEmpty()) arrayPolyLineOption.clear()
+
+            loadTrack(query_search_by_track_id.editableText.toString())
+            hideKeyboard()
+        })
     }
 
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
+        //loadTrack(36131.toString())
+    }
 
-        loadTrack()
+    private fun loadTrack(trackId: String) {
+        loadTrackJson(trackId)
                 .flatMap { parseJson(it) }
                 .subscribeOn(Schedulers.io())
                 .observeOn(AndroidSchedulers.mainThread())
                 .subscribe({
+                    if (it.aPoints.isEmpty()) {
+                        showToast("Нет такого трека")
+                        return@subscribe
+                    }
                     lateinit var polyLine: PolylineOptions
 
                     val middleArray = (it.aPoints.size / 2)
@@ -61,15 +87,17 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                         setCurrentSpeedAndColor(currentSpeed)
 
                         if (currentSpeedState != prevSpeedState) {
-                            if (i != 0) mMap.addPolyline(polyLine)
                             polyLine = createPolylineOptions(colorString)
                             if (i != 0) addCoordinateToPolyLine(polyLine, LatLng(it.aPoints[i - 1][0], it.aPoints[i - 1][1]))
                             addCoordinateToPolyLine(polyLine, LatLng(lat, lon))
                             prevSpeedState = currentSpeedState
+                            arrayPolyLineOption.add(polyLine)
                         } else {
                             addCoordinateToPolyLine(polyLine, LatLng(lat, lon))
                         }
                     }
+                    arrayPolyLineOption.forEach { arrayPolyLine.add(mMap.addPolyline(it)) }
+                    query_search_by_track_id.text.clear()
                 })
     }
 
@@ -80,9 +108,9 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
                 .geodesic(true)
     }
 
-    private fun loadTrack(): Observable<String> {
+    private fun loadTrackJson(trackId: String): Observable<String> {
         return Observable.fromCallable({
-            val url = URL("http://avionicus.com/android/track_v0649.php?avkey=1M1TE9oeWTDK6gFME9JYWXqpAGc%3D&hash=58ecdea2a91f32aa4c9a1d2ea010adcf2348166a04&track_id=36131&user_id=22")
+            val url = URL("http://avionicus.com/android/track_v0649.php?avkey=1M1TE9oeWTDK6gFME9JYWXqpAGc%3D&hash=58ecdea2a91f32aa4c9a1d2ea010adcf2348166a04&track_id=$trackId&user_id=22")
             var bufferedReader: BufferedReader? = null
             val sb = StringBuilder()
             try {
@@ -132,7 +160,7 @@ class MainActivity : AppCompatActivity(), OnMapReadyCallback {
             colorString = "#FFFF00"
         } else {
             currentSpeedState = SpeedState.STATE_FOUR
-            colorString = "#FFFF00"
+            colorString = "#000000"
         }
     }
 
